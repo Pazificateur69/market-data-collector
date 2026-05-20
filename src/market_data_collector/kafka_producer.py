@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import random
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -11,6 +13,7 @@ from typing import Any, Self
 import orjson
 import structlog
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import KafkaConnectionError
 
 from . import metrics as m
 from .config import Settings
@@ -49,22 +52,49 @@ class KafkaTickProducer:
         await self.stop()
 
     async def start(self) -> None:
+        """Bootstrap the producer, retrying with backoff if Kafka is not yet reachable.
+
+        Without retry, a transient broker outage at boot would crash the whole service
+        and an orchestrator restart loop would amplify the impact. With retry, the
+        metrics endpoint stays up so health checks can flag the degraded state.
+        """
         if self._producer is not None:
             return
-        self._producer = AIOKafkaProducer(
-            bootstrap_servers=self._settings.kafka_bootstrap_servers,
-            client_id=self._settings.kafka_client_id,
-            linger_ms=self._settings.kafka_linger_ms,
-            compression_type=self._settings.kafka_compression,
-            acks=self._settings.kafka_acks,
-            enable_idempotence=False,
-        )
-        await self._producer.start()
-        logger.info(
-            "kafka.producer.started",
-            bootstrap=self._settings.kafka_bootstrap_servers,
-            topic=self._settings.kafka_topic,
-        )
+        delay = self._settings.backoff_initial_seconds
+        while True:
+            producer = AIOKafkaProducer(
+                bootstrap_servers=self._settings.kafka_bootstrap_servers,
+                client_id=self._settings.kafka_client_id,
+                linger_ms=self._settings.kafka_linger_ms,
+                compression_type=self._settings.kafka_compression,
+                acks=self._settings.kafka_acks,
+                enable_idempotence=False,
+            )
+            try:
+                await producer.start()
+            except KafkaConnectionError as exc:
+                # Producer holds a half-open client; close it before retrying.
+                await producer.stop()
+                jitter = random.uniform(0, delay * 0.25)
+                logger.warning(
+                    "kafka.bootstrap.failed",
+                    bootstrap=self._settings.kafka_bootstrap_servers,
+                    error=str(exc),
+                    retry_in=round(delay + jitter, 2),
+                )
+                await asyncio.sleep(delay + jitter)
+                delay = min(
+                    delay * self._settings.backoff_multiplier,
+                    self._settings.backoff_max_seconds,
+                )
+                continue
+            self._producer = producer
+            logger.info(
+                "kafka.producer.started",
+                bootstrap=self._settings.kafka_bootstrap_servers,
+                topic=self._settings.kafka_topic,
+            )
+            return
 
     async def stop(self) -> None:
         if self._producer is None:

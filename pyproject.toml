@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "market-data-collector"
-version = "0.1.0"
+version = "0.2.1"
 description = "Async crypto market data collector: WebSocket -> Kafka, with reconnection/backoff and strict typing."
 readme = "README.md"
 license = { text = "MIT" }
@@ -29,6 +29,8 @@ dependencies = [
   "pydantic-settings>=2.2.0",
   "structlog>=24.1.0",
   "prometheus-client>=0.20.0",
+  "packaging>=24.0",
+  "cramjam>=2.8.0",
 ]
 
 [project.optional-dependencies]

@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Annotated, Literal
+
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+KafkaAcks = Literal[0, 1, -1, "all"]
+
+# NoDecode skips pydantic-settings' default JSON parsing for list[str] env vars so we
+# can accept comma-separated strings via our own validator.
+SymbolList = Annotated[list[str], NoDecode]
 
 
 class Settings(BaseSettings):
@@ -18,9 +26,9 @@ class Settings(BaseSettings):
     )
 
     # Symbols traded on each exchange. Format follows the exchange's native convention.
-    binance_symbols: list[str] = Field(default=["btcusdt", "ethusdt"])
-    coinbase_symbols: list[str] = Field(default=["BTC-USD", "ETH-USD"])
-    kraken_symbols: list[str] = Field(default=["XBT/USD", "ETH/USD"])
+    binance_symbols: SymbolList = Field(default=["btcusdt", "ethusdt"])
+    coinbase_symbols: SymbolList = Field(default=["BTC-USD", "ETH-USD"])
+    kraken_symbols: SymbolList = Field(default=["XBT/USD", "ETH/USD"])
 
     # Kafka
     kafka_bootstrap_servers: str = Field(default="localhost:9092")
@@ -28,7 +36,7 @@ class Settings(BaseSettings):
     kafka_client_id: str = Field(default="market-data-collector")
     kafka_linger_ms: int = Field(default=5)
     kafka_compression: str = Field(default="lz4")
-    kafka_acks: str = Field(default="1")
+    kafka_acks: KafkaAcks = Field(default=1)
 
     # Backoff policy for WebSocket reconnects.
     backoff_initial_seconds: float = Field(default=1.0, ge=0.1)
@@ -51,4 +59,18 @@ class Settings(BaseSettings):
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
             return [s.strip() for s in value.split(",") if s.strip()]
+        return value
+
+    @field_validator("kafka_acks", mode="before")
+    @classmethod
+    def _coerce_acks(cls, value: object) -> object:
+        """Accept the broker-side string forms ("0", "1", "-1", "all") from env."""
+        if isinstance(value, str):
+            stripped = value.strip().lower()
+            if stripped == "all":
+                return "all"
+            try:
+                return int(stripped)
+            except ValueError:
+                pass
         return value

@@ -15,11 +15,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Build inside a venv so every transitive dep (including stdlib-like ones such as
+# `packaging`) is captured in one tree we can copy whole.
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --upgrade pip build \
-    && pip install --prefix=/install .
+RUN pip install --upgrade pip \
+    && pip install .
 
 ############################
 # Runtime stage
@@ -29,12 +34,12 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONHASHSEED=random \
-    PATH="/usr/local/bin:${PATH}"
+    PATH="/opt/venv/bin:${PATH}"
 
 RUN groupadd --system --gid 1000 app \
     && useradd --system --uid 1000 --gid app --shell /usr/sbin/nologin app
 
-COPY --from=builder /install /usr/local
+COPY --from=builder /opt/venv /opt/venv
 
 USER app
 WORKDIR /home/app

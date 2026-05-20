@@ -16,6 +16,8 @@ build
 .env
 .env.*
 !.env.example
-README.md
 docker-compose.yml
+deploy
 tests
+CHANGELOG.md
+.github
