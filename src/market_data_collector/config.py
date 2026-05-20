@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # Symbols traded on each exchange. Format follows the exchange's native convention.
     binance_symbols: list[str] = Field(default=["btcusdt", "ethusdt"])
     coinbase_symbols: list[str] = Field(default=["BTC-USD", "ETH-USD"])
+    kraken_symbols: list[str] = Field(default=["XBT/USD", "ETH/USD"])
 
     # Kafka
     kafka_bootstrap_servers: str = Field(default="localhost:9092")
@@ -34,11 +35,18 @@ class Settings(BaseSettings):
     backoff_max_seconds: float = Field(default=60.0, ge=1.0)
     backoff_multiplier: float = Field(default=2.0, ge=1.0)
 
+    # In-memory queue between WS adapters and Kafka producer (backpressure isolation).
+    queue_max_size: int = Field(default=10_000, ge=1)
+
+    # Metrics
+    metrics_enabled: bool = Field(default=True)
+    metrics_port: int = Field(default=9100, ge=1, le=65_535)
+
     # Health & misc
     log_level: str = Field(default="INFO")
     metrics_log_interval_seconds: float = Field(default=30.0, ge=1.0)
 
-    @field_validator("binance_symbols", "coinbase_symbols", mode="before")
+    @field_validator("binance_symbols", "coinbase_symbols", "kraken_symbols", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):

@@ -39,10 +39,12 @@ COPY --from=builder /install /usr/local
 USER app
 WORKDIR /home/app
 
+EXPOSE 9100
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import socket,os,sys; \
-host,_,port=os.environ.get('MDC_KAFKA_BOOTSTRAP_SERVERS','localhost:9092').partition(':'); \
-s=socket.socket(); s.settimeout(3); \
-sys.exit(0 if s.connect_ex((host, int(port or 9092)))==0 else 1)" || exit 1
+    CMD python -c "import urllib.request,os,sys; \
+port=os.environ.get('MDC_METRICS_PORT','9100'); \
+sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{port}/metrics', timeout=3).status==200 else 1)" \
+    || exit 1
 
 ENTRYPOINT ["python", "-m", "market_data_collector"]

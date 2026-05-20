@@ -28,6 +28,7 @@ dependencies = [
   "pydantic>=2.6.0",
   "pydantic-settings>=2.2.0",
   "structlog>=24.1.0",
+  "prometheus-client>=0.20.0",
 ]
 
 [project.optional-dependencies]

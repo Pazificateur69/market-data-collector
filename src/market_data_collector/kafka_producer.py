@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from datetime import UTC, datetime
 from decimal import Decimal
 from types import TracebackType
 from typing import Any, Self
@@ -10,6 +12,7 @@ import orjson
 import structlog
 from aiokafka import AIOKafkaProducer
 
+from . import metrics as m
 from .config import Settings
 from .models import Tick
 
@@ -76,8 +79,17 @@ class KafkaTickProducer:
     async def publish(self, tick: Tick) -> None:
         if self._producer is None:
             raise RuntimeError("KafkaTickProducer not started")
-        await self._producer.send_and_wait(
-            self._settings.kafka_topic,
-            value=_serialize(tick),
-            key=tick.kafka_key(),
-        )
+        start = time.perf_counter()
+        try:
+            await self._producer.send_and_wait(
+                self._settings.kafka_topic,
+                value=_serialize(tick),
+                key=tick.kafka_key(),
+            )
+        finally:
+            elapsed = time.perf_counter() - start
+            m.PUBLISH_LATENCY.observe(elapsed)
+        # End-to-end latency: exchange event_time -> publish ack on our side.
+        e2e = (datetime.now(UTC) - tick.event_time).total_seconds()
+        if e2e >= 0:  # guard against clock skew producing negative values
+            m.E2E_LATENCY.labels(tick.exchange.value).observe(e2e)

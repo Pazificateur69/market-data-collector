@@ -7,6 +7,7 @@ from decimal import Decimal
 from market_data_collector.config import Settings
 from market_data_collector.exchanges.binance import BinanceAdapter, _binance_to_normalized
 from market_data_collector.exchanges.coinbase import CoinbaseAdapter
+from market_data_collector.exchanges.kraken import KrakenAdapter
 from market_data_collector.models import Exchange, Side
 
 
@@ -86,6 +87,39 @@ def test_coinbase_parses_match_message() -> None:
 def test_coinbase_skips_unrelated_channels() -> None:
     adapter = CoinbaseAdapter(["BTC-USD"], _settings())
     assert adapter.parse({"channel": "heartbeat"}) is None
+
+
+def test_kraken_parses_trade_message() -> None:
+    adapter = KrakenAdapter(["XBT/USD"], _settings())
+    raw = {
+        "channel": "trade",
+        "type": "update",
+        "data": [
+            {
+                "symbol": "XBT/USD",
+                "side": "sell",
+                "price": "41000.00",
+                "qty": "0.25",
+                "ord_type": "market",
+                "trade_id": 9001,
+                "timestamp": "2024-01-01T00:00:00.000000Z",
+            }
+        ],
+    }
+    tick = adapter.parse(raw)
+    assert tick is not None
+    assert tick.exchange is Exchange.KRAKEN
+    assert tick.symbol == "XBT/USD"
+    assert tick.price == Decimal("41000.00")
+    assert tick.quantity == Decimal("0.25")
+    assert tick.side is Side.SELL
+    assert tick.trade_id == "9001"
+
+
+def test_kraken_skips_status_messages() -> None:
+    adapter = KrakenAdapter(["XBT/USD"], _settings())
+    assert adapter.parse({"channel": "status", "data": []}) is None
+    assert adapter.parse({"channel": "trade", "type": "heartbeat"}) is None
 
 
 def test_tick_kafka_key_groups_by_exchange_and_symbol() -> None:

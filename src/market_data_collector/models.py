@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class Exchange(StrEnum):
     BINANCE = "binance"
     COINBASE = "coinbase"
+    KRAKEN = "kraken"
 
 
 class Side(StrEnum):

@@ -13,6 +13,7 @@ import structlog
 import websockets
 from websockets.asyncio.client import ClientConnection, connect
 
+from .. import metrics as m
 from ..config import Settings
 from ..models import Exchange, Tick
 
@@ -54,12 +55,15 @@ class ExchangeAdapter(ABC):
                     delay = self._settings.backoff_initial_seconds  # reset on success
                     yield tick
             except asyncio.CancelledError:
+                m.WS_CONNECTED.labels(self.exchange.value).set(0)
                 raise
             except (websockets.ConnectionClosed, OSError) as exc:
                 self._log.warning("ws.disconnect", reason=str(exc), retry_in=round(delay, 2))
             except Exception as exc:
                 self._log.exception("ws.unexpected_error", error=str(exc))
 
+            m.WS_CONNECTED.labels(self.exchange.value).set(0)
+            m.WS_RECONNECTS.labels(self.exchange.value).inc()
             jitter = random.uniform(0, delay * 0.25)
             await asyncio.sleep(delay + jitter)
             delay = min(
@@ -76,6 +80,7 @@ class ExchangeAdapter(ABC):
             max_size=2**20,
         ) as ws:
             self._log.info("ws.connected", url=self.url(), symbols=self._symbols)
+            m.WS_CONNECTED.labels(self.exchange.value).set(1)
             await self._send_subscription(ws)
             async for message in ws:
                 tick = self._safe_parse(message)
@@ -87,7 +92,7 @@ class ExchangeAdapter(ABC):
         if payload is None:
             return
         await ws.send(orjson.dumps(payload).decode())
-        self._log.info("ws.subscribed", channels=payload.get("params") or payload)
+        self._log.info("ws.subscribed", payload=payload)
 
     def _safe_parse(self, message: str | bytes) -> Tick | None:
         try:
